@@ -34,6 +34,55 @@ It is written in Python and uses Qt for its graphical interface.
 Annotations are saved as XML files in PASCAL VOC format, the format used
 by `ImageNet <http://www.image-net.org/>`__.  Besides, it also supports YOLO and CreateML formats.
 
+Enhanced Features (v1.9.0 - 2025-12-14)
+----------------------------------------
+
+This fork includes the following productivity enhancements:
+此分支在原版基础上增加了以下功能增强：
+
+**Copy & Paste 复制粘贴**
+
+- **Ctrl+C / Ctrl+V**: Copy and paste bounding boxes across images with red semi-transparent preview
+  跨图像复制粘贴边界框，带红色半透明预览
+- **Ctrl+Shift+V**: Copy all boxes from previous image
+  从上一张图像复制所有边界框
+
+**Quick Operations 快速操作**
+
+- **Q Key**: Quick delete hovered shape (no need to select first)
+  快速删除鼠标悬停的形状（无需先选中）
+- **Ctrl+Z**: Undo last 20 delete operations
+  撤销最近 20 次删除操作
+- **Double-click empty area**: Fit window
+  双击空白区域适应窗口
+- **Double-click shape**: Edit label directly
+  双击形状直接编辑标签
+
+**Mouse Behavior 鼠标行为**
+
+- **Mouse wheel**: Zoom in/out (swapped from original scroll behavior)
+  鼠标滚轮缩放（与原版滚动行为交换）
+- **Ctrl + Mouse wheel**: Scroll vertically (3x faster speed)
+  Ctrl + 鼠标滚轮垂直滚动（速度提升3倍）
+- **Ctrl key**: Disable vertex selection to drag small boxes easier
+  按住 Ctrl 键禁用顶点选择，便于拖动小目标框
+
+**Visual Improvements 视觉优化**
+
+- Vertices only show when hovering over shapes
+  仅在鼠标悬停时显示顶点
+- Hover detection prioritizes smallest containing shape
+  悬停检测优先选择最小的包含形状
+- Border colors are fully opaque for better visibility
+  边框完全不透明，提升可见性
+- Configurable line width (DEFAULT_LINE_WIDTH in shape.py)
+  可配置线宽（shape.py 中的 DEFAULT_LINE_WIDTH）
+
+**State Memory 状态记忆**
+
+- Remember zoom level and scroll position when switching images
+  切换图像时记忆缩放级别和滚动位置
+
 .. image:: https://raw.githubusercontent.com/tzutalin/labelImg/master/demo/demo3.jpg
      :alt: Demo Image
 

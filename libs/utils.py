@@ -81,11 +81,25 @@ def format_shortcut(text):
 
 def generate_color_by_text(text):
     s = ustr(text)
+    
+    # Predefined bright colors for common classes
+    predefined_colors = {
+        'person': QColor(0, 255, 0, 255),      # Green
+        'car': QColor(255, 0, 0, 255),         # Red
+        'bicycle': QColor(0, 0, 255, 255),     # Blue
+        'bus': QColor(255, 255, 0, 255),       # Yellow
+    }
+    
+    # Return predefined color if label matches
+    if s in predefined_colors:
+        return predefined_colors[s]
+    
+    # Generate bright, saturated colors for other labels
     hash_code = int(hashlib.sha256(s.encode('utf-8')).hexdigest(), 16)
-    r = int((hash_code / 255) % 255)
-    g = int((hash_code / 65025) % 255)
-    b = int((hash_code / 16581375) % 255)
-    return QColor(r, g, b, 100)
+    r = int((hash_code / 255) % 200) + 55  # Range: 55-255
+    g = int((hash_code / 65025) % 200) + 55  # Range: 55-255
+    b = int((hash_code / 16581375) % 200) + 55  # Range: 55-255
+    return QColor(r, g, b, 255)  # Fully opaque
 
 
 def have_qstring():

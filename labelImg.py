@@ -98,6 +98,17 @@ class MainWindow(QMainWindow, WindowMixin):
         self.label_hist = []
         self.last_open_dir = None
         self.cur_img_idx = 0
+        
+        # Undo stack for deleted shapes
+        self.delete_undo_stack = []
+        
+        # Clipboard for copy/paste shapes
+        self.clipboard_shape = None
+        self.paste_mode = False
+        
+        # Remember scroll position when switching images
+        self.last_scroll_pos = {'h': 0, 'v': 0}
+        
         self.img_count = len(self.m_img_list)
 
         # Whether we need to save or not.
@@ -203,6 +214,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.canvas.shapeMoved.connect(self.set_dirty)
         self.canvas.selectionChanged.connect(self.shape_selection_changed)
         self.canvas.drawingPolygon.connect(self.toggle_drawing_sensitive)
+        self.canvas.deleteHoveredShape.connect(self.delete_hovered_shape)
+        self.canvas.editShape.connect(self.edit_hovered_shape)
+        self.canvas.pasteShape.connect(self.paste_shape_at_position)
 
         self.setCentralWidget(scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock)
@@ -228,7 +242,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         open_annotation = action(get_str('openAnnotation'), self.open_annotation_dialog,
                                  'Ctrl+Shift+O', 'open', get_str('openAnnotationDetail'))
-        copy_prev_bounding = action(get_str('copyPrevBounding'), self.copy_previous_bounding_boxes, 'Ctrl+v', 'copy', get_str('copyPrevBounding'))
+        copy_prev_bounding = action(get_str('copyPrevBounding'), self.copy_previous_bounding_boxes, 'Ctrl+Shift+V', 'copy', get_str('copyPrevBounding'))
 
         open_next_image = action(get_str('nextImg'), self.open_next_image,
                                  'd', 'next', get_str('nextImgDetail'))
@@ -279,6 +293,15 @@ class MainWindow(QMainWindow, WindowMixin):
                         'w', 'new', get_str('crtBoxDetail'), enabled=False)
         delete = action(get_str('delBox'), self.delete_selected_shape,
                         'Delete', 'delete', get_str('delBoxDetail'), enabled=False)
+        # Add Q key as an additional shortcut for delete
+        delete_alt = action(get_str('delBox'), self.delete_selected_shape,
+                        'Q', 'delete', get_str('delBoxDetail'), enabled=False)
+        undo_delete = action('Undo Delete', self.undo_last_delete,
+                        'Ctrl+Z', 'undo', 'Undo last delete operation', enabled=False)
+        copy_shape = action('Copy Shape', self.copy_shape_to_clipboard,
+                        'Ctrl+C', 'copy', 'Copy selected shape to clipboard', enabled=False)
+        paste_shape = action('Paste Shape', self.enter_paste_mode,
+                        'Ctrl+V', 'paste', 'Paste shape from clipboard', enabled=False)
         copy = action(get_str('dupBox'), self.copy_selected_shape,
                       'Ctrl+D', 'copy', get_str('dupBoxDetail'),
                       enabled=False)
@@ -381,7 +404,8 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # Store actions for further handling.
         self.actions = Struct(save=save, save_format=save_format, saveAs=save_as, open=open, close=close, resetAll=reset_all, deleteImg=delete_image,
-                              lineColor=color1, create=create, delete=delete, edit=edit, copy=copy,
+                              lineColor=color1, create=create, delete=delete, deleteAlt=delete_alt, undoDelete=undo_delete,
+                              copyShape=copy_shape, pasteShape=paste_shape, edit=edit, copy=copy,
                               createMode=create_mode, editMode=edit_mode, advancedMode=advanced_mode,
                               shapeLineColor=shape_line_color, shapeFillColor=shape_fill_color,
                               zoom=zoom, zoomIn=zoom_in, zoomOut=zoom_out, zoomOrg=zoom_org,
@@ -440,6 +464,12 @@ class MainWindow(QMainWindow, WindowMixin):
             light_brighten, light_darken, light_org))
 
         self.menus.file.aboutToShow.connect(self.update_file_menu)
+
+        # Add delete_alt, undo_delete, copy and paste actions to main window so shortcuts work
+        self.addAction(delete_alt)
+        self.addAction(undo_delete)
+        self.addAction(copy_shape)
+        self.addAction(paste_shape)
 
         # Custom context menu for the canvas widget:
         add_actions(self.canvas.menus[0], self.actions.beginnerContext)
@@ -648,6 +678,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.image_data = None
         self.label_file = None
         self.canvas.reset_state()
+        # Clear delete undo stack when switching images
+        self.delete_undo_stack.clear()
+        self.actions.undoDelete.setEnabled(False)
         self.label_coordinates.clear()
         self.combo_box.cb.clear()
 
@@ -802,12 +835,14 @@ class MainWindow(QMainWindow, WindowMixin):
             self._no_selection_slot = False
         else:
             shape = self.canvas.selected_shape
-            if shape:
+            if shape and shape in self.shapes_to_items:
                 self.shapes_to_items[shape].setSelected(True)
             else:
                 self.label_list.clearSelection()
         self.actions.delete.setEnabled(selected)
+        self.actions.deleteAlt.setEnabled(selected)
         self.actions.copy.setEnabled(selected)
+        self.actions.copyShape.setEnabled(selected)
         self.actions.edit.setEnabled(selected)
         self.actions.shapeLineColor.setEnabled(selected)
         self.actions.shapeFillColor.setEnabled(selected)
@@ -859,7 +894,9 @@ class MainWindow(QMainWindow, WindowMixin):
             if fill_color:
                 shape.fill_color = QColor(*fill_color)
             else:
-                shape.fill_color = generate_color_by_text(label)
+                # Generate fill color with transparency from line color
+                line_col = generate_color_by_text(label)
+                shape.fill_color = QColor(line_col.red(), line_col.green(), line_col.blue(), 80)
 
             self.add_label(shape)
         self.update_combo_box()
@@ -995,7 +1032,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.canvas.reset_all_lines()
 
     def scroll_request(self, delta, orientation):
-        units = - delta / (8 * 15)
+        units = - delta / (8 * 5)  # Increased scroll speed (was 8 * 15)
         bar = self.scroll_bars[orientation]
         bar.setValue(int(bar.value() + bar.singleStep() * units))
 
@@ -1092,6 +1129,11 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def load_file(self, file_path=None):
         """Load the specified file, or the last opened file if None."""
+        # Save current scroll position before loading new image
+        if hasattr(self, 'scroll_bars'):
+            self.last_scroll_pos['h'] = self.scroll_bars[Qt.Horizontal].value()
+            self.last_scroll_pos['v'] = self.scroll_bars[Qt.Vertical].value()
+        
         self.reset_state()
         self.canvas.setEnabled(False)
         if file_path is None:
@@ -1153,8 +1195,20 @@ class MainWindow(QMainWindow, WindowMixin):
                 self.load_labels(self.label_file.shapes)
             self.set_clean()
             self.canvas.setEnabled(True)
-            self.adjust_scale(initial=True)
+            
+            # Keep current zoom level when switching images
+            # Only adjust scale on initial load (when zoom_widget doesn't exist yet)
+            if not hasattr(self, 'zoom_widget'):
+                self.adjust_scale(initial=True)
+            # Otherwise keep the current zoom level from zoom_widget
+            
             self.paint_canvas()
+            
+            # Restore scroll position after painting
+            if hasattr(self, 'last_scroll_pos'):
+                self.scroll_bars[Qt.Horizontal].setValue(self.last_scroll_pos['h'])
+                self.scroll_bars[Qt.Vertical].setValue(self.last_scroll_pos['v'])
+            
             self.add_recent_file(self.file_path)
             self.toggle_actions(True)
             self.show_bounding_box_from_annotation_file(self.file_path)
@@ -1162,10 +1216,10 @@ class MainWindow(QMainWindow, WindowMixin):
             counter = self.counter_str()
             self.setWindowTitle(__appname__ + ' ' + file_path + ' ' + counter)
 
-            # Default : select last item if there is at least one item
-            if self.label_list.count():
-                self.label_list.setCurrentItem(self.label_list.item(self.label_list.count() - 1))
-                self.label_list.item(self.label_list.count() - 1).setSelected(True)
+            # Don't auto-select any item when loading new image
+            # User needs to click to select
+            self.label_list.clearSelection()
+            self.canvas.de_select_shape()
 
             self.canvas.setFocus(True)
             return True
@@ -1572,11 +1626,86 @@ class MainWindow(QMainWindow, WindowMixin):
             self.set_dirty()
 
     def delete_selected_shape(self):
-        self.remove_label(self.canvas.delete_selected())
+        # First check if there's a hovered shape (priority for hover delete)
+        if self.canvas.h_shape and not self.canvas.drawing():
+            self.delete_hovered_shape(self.canvas.h_shape)
+            return
+        
+        # Otherwise delete selected shape
+        deleted_shape = self.canvas.delete_selected()
+        if deleted_shape:
+            self._record_deleted_shape(deleted_shape)
+            self.remove_label(deleted_shape)
+            self.set_dirty()
+            if self.no_shapes():
+                for action in self.actions.onShapesPresent:
+                    action.setEnabled(False)
+    
+    def delete_hovered_shape(self, shape):
+        """Delete a hovered shape (triggered by Q key on hover)"""
+        if shape in self.canvas.shapes:
+            self._record_deleted_shape(shape)
+            self.canvas.shapes.remove(shape)
+            self.canvas.un_highlight(shape)
+            self.remove_label(shape)
+            self.canvas.update()
+            self.set_dirty()
+            if self.no_shapes():
+                for action in self.actions.onShapesPresent:
+                    action.setEnabled(False)
+    
+    def edit_hovered_shape(self, shape):
+        """Edit a hovered shape (triggered by double-click on shape)"""
+        if shape in self.canvas.shapes:
+            # Select the shape first
+            self.canvas.select_shape(shape)
+            # Get the corresponding item in the label list
+            if shape in self.shapes_to_items:
+                item = self.shapes_to_items[shape]
+                # Open edit dialog
+                text = self.label_dialog.pop_up(item.text())
+                if text is not None:
+                    item.setText(text)
+                    item.setBackground(generate_color_by_text(text))
+                    shape.label = text
+                    self.set_dirty()
+                    self.update_combo_box()
+    
+    def _record_deleted_shape(self, shape):
+        """Record deleted shape for undo"""
+        if shape:
+            # Store shape data for undo
+            shape_data = {
+                'shape': shape,
+                'item': self.shapes_to_items.get(shape)
+            }
+            self.delete_undo_stack.append(shape_data)
+            # Limit stack size to 20
+            if len(self.delete_undo_stack) > 20:
+                self.delete_undo_stack.pop(0)
+            self.actions.undoDelete.setEnabled(True)
+    
+    def undo_last_delete(self):
+        """Undo the last delete operation"""
+        if not self.delete_undo_stack:
+            return
+        
+        shape_data = self.delete_undo_stack.pop()
+        shape = shape_data['shape']
+        
+        # Restore shape to canvas
+        self.canvas.shapes.append(shape)
+        
+        # Restore label to list
+        self.add_label(shape)
+        
+        # Update canvas
+        self.canvas.update()
         self.set_dirty()
-        if self.no_shapes():
-            for action in self.actions.onShapesPresent:
-                action.setEnabled(False)
+        
+        # Disable undo if stack is empty
+        if not self.delete_undo_stack:
+            self.actions.undoDelete.setEnabled(False)
 
     def choose_shape_line_color(self):
         color = self.color_dialog.getColor(self.line_color, u'Choose Line Color',
@@ -1601,6 +1730,86 @@ class MainWindow(QMainWindow, WindowMixin):
         self.canvas.end_move(copy=True)
         self.add_label(self.canvas.selected_shape)
         self.set_dirty()
+    
+    def copy_shape_to_clipboard(self):
+        """Copy selected shape to clipboard for cross-image pasting"""
+        if not self.canvas.selected_shape:
+            return
+        
+        shape = self.canvas.selected_shape
+        # Store shape data in clipboard
+        self.clipboard_shape = {
+            'label': shape.label,
+            'points': [(p.x(), p.y()) for p in shape.points],
+            'line_color': shape.line_color.getRgb(),
+            'fill_color': shape.fill_color.getRgb(),
+            'difficult': shape.difficult
+        }
+        self.actions.pasteShape.setEnabled(True)
+        self.statusBar().showMessage('Shape copied to clipboard', 2000)
+    
+    def enter_paste_mode(self):
+        """Enter paste mode to place copied shape"""
+        if not self.clipboard_shape:
+            return
+        
+        # Convert clipboard data to QPointF format for canvas
+        shape_data = {
+            'label': self.clipboard_shape['label'],
+            'points': [QPointF(p[0], p[1]) for p in self.clipboard_shape['points']],
+            'line_color': QColor(*self.clipboard_shape['line_color']),
+            'fill_color': QColor(*self.clipboard_shape['fill_color']),
+            'difficult': self.clipboard_shape['difficult']
+        }
+        
+        self.paste_mode = True
+        self.canvas.enter_paste_mode(shape_data)
+        self.statusBar().showMessage('Paste mode: Move mouse and click to place shape. Press ESC to cancel.', 5000)
+
+    def paste_shape_at_position(self, pos):
+        """Create a new shape at the given position with clipboard data"""
+        if not self.clipboard_shape or not self.paste_mode:
+            return
+        
+        # Get clipboard points
+        clipboard_points = self.clipboard_shape['points']
+        if not clipboard_points:
+            return
+        
+        # Calculate center of clipboard shape
+        min_x = min(p[0] for p in clipboard_points)
+        max_x = max(p[0] for p in clipboard_points)
+        min_y = min(p[1] for p in clipboard_points)
+        max_y = max(p[1] for p in clipboard_points)
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        
+        # Calculate offset to paste position
+        offset_x = pos.x() - center_x
+        offset_y = pos.y() - center_y
+        
+        # Create new shape with offset points
+        shape = Shape(label=self.clipboard_shape['label'])
+        shape.line_color = QColor(*self.clipboard_shape['line_color'])
+        shape.fill_color = QColor(*self.clipboard_shape['fill_color'])
+        shape.difficult = self.clipboard_shape['difficult']
+        
+        for p in clipboard_points:
+            shape.add_point(QPointF(p[0] + offset_x, p[1] + offset_y))
+        shape.close()
+        
+        # Add to canvas
+        self.canvas.shapes.append(shape)
+        self.add_label(shape)
+        self.set_dirty()
+        
+        # Exit paste mode
+        self.paste_mode = False
+        self.canvas.exit_paste_mode()
+        
+        # Update UI
+        self.canvas.update()
+        self.statusBar().showMessage('Shape pasted', 2000)
 
     def move_shape(self):
         self.canvas.end_move(copy=False)

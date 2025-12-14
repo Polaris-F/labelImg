@@ -12,10 +12,15 @@ except ImportError:
 from libs.utils import distance
 import sys
 
-DEFAULT_LINE_COLOR = QColor(0, 255, 0, 128)
-DEFAULT_FILL_COLOR = QColor(255, 0, 0, 128)
+# ========== 可调整的配置参数 ==========
+# 边框线粗细（数值越大线越粗，建议范围: 1.0 - 5.0）
+DEFAULT_LINE_WIDTH = 1.0
+# =====================================
+
+DEFAULT_LINE_COLOR = QColor(0, 255, 0, 255)
+DEFAULT_FILL_COLOR = QColor(255, 0, 0, 80)  # More transparent for better visibility
 DEFAULT_SELECT_LINE_COLOR = QColor(255, 255, 255)
-DEFAULT_SELECT_FILL_COLOR = QColor(0, 128, 255, 155)
+DEFAULT_SELECT_FILL_COLOR = QColor(0, 128, 255, 80)  # More transparent
 DEFAULT_VERTEX_FILL_COLOR = QColor(0, 255, 0, 255)
 DEFAULT_HVERTEX_FILL_COLOR = QColor(255, 0, 0)
 
@@ -34,7 +39,7 @@ class Shape(object):
     vertex_fill_color = DEFAULT_VERTEX_FILL_COLOR
     h_vertex_fill_color = DEFAULT_HVERTEX_FILL_COLOR
     point_type = P_ROUND
-    point_size = 16
+    point_size = 10  # Reduced from 16 for smaller hover points
     scale = 1.0
     label_font_size = 8
 
@@ -89,7 +94,7 @@ class Shape(object):
             color = self.select_line_color if self.selected else self.line_color
             pen = QPen(color)
             # Try using integer sizes for smoother drawing(?)
-            pen.setWidth(max(1, int(round(2.0 / self.scale))))
+            pen.setWidth(max(1, int(round(DEFAULT_LINE_WIDTH / self.scale))))
             painter.setPen(pen)
 
             line_path = QPainterPath()
@@ -103,13 +108,17 @@ class Shape(object):
 
             for i, p in enumerate(self.points):
                 line_path.lineTo(p)
-                self.draw_vertex(vertex_path, i)
+                # Only draw vertices when highlighted (mouse hovering)
+                if self._highlight_index is not None:
+                    self.draw_vertex(vertex_path, i)
             if self.is_closed():
                 line_path.lineTo(self.points[0])
 
             painter.drawPath(line_path)
-            painter.drawPath(vertex_path)
-            painter.fillPath(vertex_path, self.vertex_fill_color)
+            # Only draw and fill vertex path when highlighted
+            if self._highlight_index is not None:
+                painter.drawPath(vertex_path)
+                painter.fillPath(vertex_path, self.vertex_fill_color)
 
             # Draw text at the top-left
             if self.paint_label:
@@ -130,7 +139,8 @@ class Shape(object):
                         min_y += min_y_label
                     painter.drawText(int(min_x), int(min_y), self.label)
 
-            if self.fill:
+            # Fill with semi-transparent color when hovering or selected
+            if self.fill or self._highlight_index is not None:
                 color = self.select_fill_color if self.selected else self.fill_color
                 painter.fillPath(line_path, color)
 
@@ -162,12 +172,25 @@ class Shape(object):
         return index
 
     def contains_point(self, point):
-        return self.make_path().contains(point)
+        # Use polygon containment check for better accuracy
+        if len(self.points) < 4:
+            return False
+        
+        # For rectangle, use simple bounding box check
+        x_coords = [p.x() for p in self.points]
+        y_coords = [p.y() for p in self.points]
+        min_x, max_x = min(x_coords), max(x_coords)
+        min_y, max_y = min(y_coords), max(y_coords)
+        
+        return min_x <= point.x() <= max_x and min_y <= point.y() <= max_y
 
     def make_path(self):
         path = QPainterPath(self.points[0])
         for p in self.points[1:]:
             path.lineTo(p)
+        # Close the path for proper contains check
+        if self.is_closed():
+            path.closeSubpath()
         return path
 
     def bounding_rect(self):

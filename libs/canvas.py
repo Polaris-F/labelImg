@@ -29,10 +29,13 @@ class Canvas(QWidget):
     selectionChanged = pyqtSignal(bool)
     shapeMoved = pyqtSignal()
     drawingPolygon = pyqtSignal(bool)
+    deleteHoveredShape = pyqtSignal(object)  # Signal to delete hovered shape
+    editShape = pyqtSignal(object)  # Signal to edit shape on double-click
+    pasteShape = pyqtSignal(object)  # Signal to paste shape at position
 
     CREATE, EDIT = list(range(2))
 
-    epsilon = 24.0
+    epsilon = 8.0  # Reduced from 24.0 for more precise vertex detection
 
     def __init__(self, *args, **kwargs):
         super(Canvas, self).__init__(*args, **kwargs)
@@ -58,6 +61,10 @@ class Canvas(QWidget):
         self.h_vertex = None
         self._painter = QPainter()
         self._cursor = CURSOR_DEFAULT
+        # Paste mode variables
+        self.paste_mode = False
+        self.paste_shape_data = None
+        self.paste_preview_pos = QPointF()
         # Menus:
         self.menus = (QMenu(), QMenu())
         # Set widget options.
@@ -117,6 +124,12 @@ class Canvas(QWidget):
         if window.file_path is not None:
             self.parent().window().label_coordinates.setText(
                 'X: %d; Y: %d' % (pos.x(), pos.y()))
+
+        # In paste mode, update preview position
+        if self.paste_mode:
+            self.paste_preview_pos = pos
+            self.repaint()
+            return
 
         # Polygon drawing.
         if self.drawing():
@@ -216,39 +229,56 @@ class Canvas(QWidget):
         # Update shape/vertex fill and tooltip value accordingly.
         self.setToolTip("Image")
         priority_list = self.shapes + ([self.selected_shape] if self.selected_shape else [])
-        for shape in reversed([s for s in priority_list if self.isVisible(s)]):
-            # Look for a nearby vertex to highlight. If that fails,
-            # check if we happen to be inside a shape.
-            index = shape.nearest_vertex(pos, self.epsilon)
-            if index is not None:
-                if self.selected_vertex():
-                    self.h_shape.highlight_clear()
-                self.h_vertex, self.h_shape = index, shape
-                shape.highlight_vertex(index, shape.MOVE_VERTEX)
-                self.override_cursor(CURSOR_POINT)
-                self.setToolTip("Click & drag to move point")
-                self.setStatusTip(self.toolTip())
-                self.update()
-                break
-            elif shape.contains_point(pos):
-                if self.selected_vertex():
-                    self.h_shape.highlight_clear()
-                self.h_vertex, self.h_shape = None, shape
-                self.setToolTip(
-                    "Click & drag to move shape '%s'" % shape.label)
-                self.setStatusTip(self.toolTip())
-                self.override_cursor(CURSOR_GRAB)
-                self.update()
+        
+        # Get modifier keys
+        modifiers = QApplication.keyboardModifiers()
+        ctrl_pressed = modifiers & Qt.ControlModifier
+        
+        # First, check for vertex highlight (highest priority) - but skip if Ctrl is pressed
+        if not ctrl_pressed:
+            for shape in reversed([s for s in priority_list if self.isVisible(s)]):
+                index = shape.nearest_vertex(pos, self.epsilon)
+                if index is not None:
+                    if self.selected_vertex():
+                        self.h_shape.highlight_clear()
+                    self.h_vertex, self.h_shape = index, shape
+                    shape.highlight_vertex(index, shape.MOVE_VERTEX)
+                    self.override_cursor(CURSOR_POINT)
+                    self.setToolTip("Click & drag to move point")
+                    self.setStatusTip(self.toolTip())
+                    self.update()
+                    return
+        
+        # Then check for shape contains point - prioritize smallest shape
+        candidate_shapes = []
+        for shape in [s for s in priority_list if self.isVisible(s)]:
+            if shape.contains_point(pos):
+                area = shape.bounding_rect().width() * shape.bounding_rect().height()
+                candidate_shapes.append((area, shape))
+        
+        if candidate_shapes:
+            # Select the smallest shape that contains the point
+            candidate_shapes.sort(key=lambda x: x[0])
+            _, smallest_shape = candidate_shapes[0]
+            
+            if self.selected_vertex():
+                self.h_shape.highlight_clear()
+            self.h_vertex, self.h_shape = None, smallest_shape
+            self.setToolTip(
+                "Click & drag to move shape '%s'" % smallest_shape.label)
+            self.setStatusTip(self.toolTip())
+            self.override_cursor(CURSOR_GRAB)
+            self.update()
 
-                # Display annotation width and height while hovering inside
-                point1 = self.h_shape[1]
-                point3 = self.h_shape[3]
-                current_width = abs(point1.x() - point3.x())
-                current_height = abs(point1.y() - point3.y())
-                self.parent().window().label_coordinates.setText(
-                        'Width: %d, Height: %d / X: %d; Y: %d' % (current_width, current_height, pos.x(), pos.y()))
-                break
-        else:  # Nothing found, clear highlights, reset state.
+            # Display annotation width and height while hovering inside
+            point1 = self.h_shape[1]
+            point3 = self.h_shape[3]
+            current_width = abs(point1.x() - point3.x())
+            current_height = abs(point1.y() - point3.y())
+            self.parent().window().label_coordinates.setText(
+                    'Width: %d, Height: %d / X: %d; Y: %d' % (current_width, current_height, pos.x(), pos.y()))
+        else:
+            # Nothing found, clear highlights, reset state.
             if self.h_shape:
                 self.h_shape.highlight_clear()
                 self.update()
@@ -259,6 +289,12 @@ class Canvas(QWidget):
         pos = self.transform_pos(ev.pos())
 
         if ev.button() == Qt.LeftButton:
+            # Handle paste mode click
+            if self.paste_mode:
+                # Place the shape at current position
+                self.pasteShape.emit(pos)
+                return
+
             if self.drawing():
                 self.handle_drawing(pos)
             else:
@@ -351,6 +387,20 @@ class Canvas(QWidget):
         if self.can_close_shape() and len(self.current) > 3:
             self.current.pop_point()
             self.finalise()
+        elif not self.drawing():
+            pos = self.transform_pos(ev.pos())
+            # Check if double-click on a shape to edit it
+            if self.h_shape:
+                self.editShape.emit(self.h_shape)
+            else:
+                # Double-click on empty area to fit window
+                is_inside_shape = any(self.isVisible(s) and s.contains_point(pos) for s in self.shapes)
+                if not is_inside_shape:
+                    # Reset zoom to fit window
+                    try:
+                        self.parent().window().set_fit_window(True)
+                    except Exception as e:
+                        print(f"Failed to fit window: {e}")
 
     def select_shape(self, shape):
         self.de_select_shape()
@@ -363,11 +413,18 @@ class Canvas(QWidget):
     def select_shape_point(self, point):
         """Select the first shape created which contains this point."""
         self.de_select_shape()
-        if self.selected_vertex():  # A vertex is marked for selection.
+        
+        # Get modifier keys
+        modifiers = QApplication.keyboardModifiers()
+        ctrl_pressed = modifiers & Qt.ControlModifier
+        
+        # Only select vertex if Ctrl is not pressed
+        if not ctrl_pressed and self.selected_vertex():  # A vertex is marked for selection.
             index, shape = self.h_vertex, self.h_shape
             shape.highlight_vertex(index, shape.MOVE_VERTEX)
             self.select_shape(shape)
             return self.h_vertex
+        
         for shape in reversed(self.shapes):
             if self.isVisible(shape) and shape.contains_point(point):
                 self.select_shape(shape)
@@ -526,6 +583,35 @@ class Canvas(QWidget):
         if self.selected_shape_copy:
             self.selected_shape_copy.paint(p)
 
+        # Paint paste preview
+        if self.paste_mode and self.paste_shape_data:
+            # Create a preview shape at the current mouse position
+            preview_shape = Shape(label=self.paste_shape_data['label'])
+            preview_shape.line_color = QColor(255, 0, 0, 128)  # Semi-transparent red border
+            preview_shape.fill_color = QColor(255, 0, 0, 60)   # Light transparent red fill
+            
+            # Calculate shape offset based on clipboard points
+            clipboard_points = self.paste_shape_data['points']
+            if clipboard_points:
+                # Get center of clipboard shape
+                min_x = min(pt.x() for pt in clipboard_points)
+                max_x = max(pt.x() for pt in clipboard_points)
+                min_y = min(pt.y() for pt in clipboard_points)
+                max_y = max(pt.y() for pt in clipboard_points)
+                center_x = (min_x + max_x) / 2
+                center_y = (min_y + max_y) / 2
+                
+                # Offset to current position
+                offset_x = self.paste_preview_pos.x() - center_x
+                offset_y = self.paste_preview_pos.y() - center_y
+                
+                # Create preview points
+                for pt in clipboard_points:
+                    preview_shape.add_point(QPointF(pt.x() + offset_x, pt.y() + offset_y))
+                
+                preview_shape.close()
+                preview_shape.paint(p)
+
         # Paint rect
         if self.current is not None and len(self.line) == 2:
             left_top = self.line[0]
@@ -620,21 +706,30 @@ class Canvas(QWidget):
         if int(Qt.ControlModifier) | int(Qt.ShiftModifier) == int(mods) and v_delta:
             self.lightRequest.emit(v_delta)
         elif Qt.ControlModifier == int(mods) and v_delta:
+            # Ctrl + Wheel = Scroll (swap with default)
+            self.scrollRequest.emit(v_delta, Qt.Vertical)
+        elif v_delta:
+            # Default Wheel = Zoom (swap with Ctrl+Wheel)
             self.zoomRequest.emit(v_delta)
         else:
-            v_delta and self.scrollRequest.emit(v_delta, Qt.Vertical)
             h_delta and self.scrollRequest.emit(h_delta, Qt.Horizontal)
         ev.accept()
 
     def keyPressEvent(self, ev):
         key = ev.key()
-        if key == Qt.Key_Escape and self.current:
+        if key == Qt.Key_Escape and self.paste_mode:
+            # Cancel paste mode
+            self.exit_paste_mode()
+        elif key == Qt.Key_Escape and self.current:
             print('ESC press')
             self.current = None
             self.drawingPolygon.emit(False)
             self.update()
         elif key == Qt.Key_Return and self.can_close_shape():
             self.finalise()
+        elif key == Qt.Key_Q and self.h_shape and not self.drawing():
+            # Delete hovered shape when Q is pressed
+            self.deleteHoveredShape.emit(self.h_shape)
         elif key == Qt.Key_Left and self.selected_shape:
             self.move_one_pixel('Left')
         elif key == Qt.Key_Right and self.selected_shape:
@@ -746,3 +841,18 @@ class Canvas(QWidget):
 
     def set_drawing_shape_to_square(self, status):
         self.draw_square = status
+
+    def enter_paste_mode(self, shape_data):
+        """Enter paste mode with shape data from clipboard."""
+        self.paste_mode = True
+        self.paste_shape_data = shape_data
+        self.paste_preview_pos = QPointF()
+        self.override_cursor(CURSOR_DRAW)
+        self.update()
+
+    def exit_paste_mode(self):
+        """Exit paste mode."""
+        self.paste_mode = False
+        self.paste_shape_data = None
+        self.restore_cursor()
+        self.update()
