@@ -1,38 +1,11 @@
 .. image:: /readme/images/labelimg.png
         :target: https://github.com/heartexlabs/label-studio
 
-Label Studio is a modern, multi-modal data annotation tool
-=======
+⚡ Enhanced LabelImg - Productivity Fork
+========================================
 
-LabelImg, the popular image annotation tool created by Tzutalin with the help of dozens contributors, is no longer actively being developed and has become part of the Label Studio community. Check out `Label Studio <https://github.com/heartexlabs/label-studio>`__, the most flexible open source data labeling tool for images, text, hypertext, audio, video and time-series data. `Install <https://labelstud.io/guide/install.html>`__ Label Studio and join the `slack community <https://label-studio.slack.com/>`__ to get started.
-
-.. image:: /readme/images/label-studio-1-6-player-screenshot.png
-        :target: https://github.com/heartexlabs/label-studio
-
-About LabelImg
-========
-
-.. image:: https://img.shields.io/pypi/v/labelimg.svg
-        :target: https://pypi.python.org/pypi/labelimg
-
-.. image:: https://img.shields.io/github/workflow/status/tzutalin/labelImg/Package?style=for-the-badge
-        :alt: GitHub Workflow Status
-
-.. image:: https://img.shields.io/badge/lang-en-blue.svg
-        :target: https://github.com/tzutalin/labelImg
-
-.. image:: https://img.shields.io/badge/lang-zh-green.svg
-        :target: https://github.com/tzutalin/labelImg/blob/master/readme/README.zh.rst
-
-.. image:: https://img.shields.io/badge/lang-jp-green.svg
-        :target: https://github.com/tzutalin/labelImg/blob/master/readme/README.jp.rst
-
-LabelImg is a graphical image annotation tool.
-
-It is written in Python and uses Qt for its graphical interface.
-
-Annotations are saved as XML files in PASCAL VOC format, the format used
-by `ImageNet <http://www.image-net.org/>`__.  Besides, it also supports YOLO and CreateML formats.
+**🎯 This is an enhanced fork with additional productivity features!**
+**本版本是增强版，包含额外的生产力功能！**
 
 Enhanced Features (v1.9.0 - 2025-12-14)
 ----------------------------------------
@@ -82,6 +55,41 @@ This fork includes the following productivity enhancements:
 
 - Remember zoom level and scroll position when switching images
   切换图像时记忆缩放级别和滚动位置
+
+========================================
+
+Label Studio is a modern, multi-modal data annotation tool
+=======
+
+LabelImg, the popular image annotation tool created by Tzutalin with the help of dozens contributors, is no longer actively being developed and has become part of the Label Studio community. Check out `Label Studio <https://github.com/heartexlabs/label-studio>`__, the most flexible open source data labeling tool for images, text, hypertext, audio, video and time-series data. `Install <https://labelstud.io/guide/install.html>`__ Label Studio and join the `slack community <https://label-studio.slack.com/>`__ to get started.
+
+.. image:: /readme/images/label-studio-1-6-player-screenshot.png
+        :target: https://github.com/heartexlabs/label-studio
+
+About LabelImg
+========
+
+.. image:: https://img.shields.io/pypi/v/labelimg.svg
+        :target: https://pypi.python.org/pypi/labelimg
+
+.. image:: https://img.shields.io/github/workflow/status/tzutalin/labelImg/Package?style=for-the-badge
+        :alt: GitHub Workflow Status
+
+.. image:: https://img.shields.io/badge/lang-en-blue.svg
+        :target: https://github.com/tzutalin/labelImg
+
+.. image:: https://img.shields.io/badge/lang-zh-green.svg
+        :target: https://github.com/tzutalin/labelImg/blob/master/readme/README.zh.rst
+
+.. image:: https://img.shields.io/badge/lang-jp-green.svg
+        :target: https://github.com/tzutalin/labelImg/blob/master/readme/README.jp.rst
+
+LabelImg is a graphical image annotation tool.
+
+It is written in Python and uses Qt for its graphical interface.
+
+Annotations are saved as XML files in PASCAL VOC format, the format used
+by `ImageNet <http://www.image-net.org/>`__.  Besides, it also supports YOLO and CreateML formats.
 
 .. image:: https://raw.githubusercontent.com/tzutalin/labelImg/master/demo/demo3.jpg
      :alt: Demo Image
