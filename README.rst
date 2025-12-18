@@ -7,11 +7,42 @@
 **🎯 This is an enhanced fork with additional productivity features!**
 **本版本是增强版，包含额外的生产力功能！**
 
-Enhanced Features (v1.9.0 - 2025-12-14)
+Enhanced Features (v1.10.0 - 2025-12-18)
 ----------------------------------------
+
+**🆕 Latest Update (2025-12-18): Instance Navigation Mode 实例导航模式**
 
 This fork includes the following productivity enhancements:
 此分支在原版基础上增加了以下功能增强：
+
+**Instance Navigation Mode 实例导航模式 (NEW!)**
+
+- **Ctrl+I**: Toggle instance navigation mode
+  切换实例导航模式
+- **A/D Keys**: Navigate through all instances across images (in navigation mode)
+  在所有图像的实例间导航（导航模式下）
+- **Visual Enhancements**: 2x thicker borders, no fill, crosshair positioning lines
+  视觉增强：2倍粗边框、无填充、十字定位线
+- **Auto Sort**: Sort instances by center position (X primary, Y secondary)
+  自动排序：按中心位置排序实例（X优先，Y次之）
+- **Enter Key**: Quick edit label with keyboard navigation (in navigation mode)
+  Enter键快速编辑标签，支持键盘导航（导航模式下）
+- **Smart Focus**: Auto-skip images without annotations
+  智能聚焦：自动跳过无标注图像
+
+**Label Dialog Enhancements 标签对话框增强**
+
+- **Delete Button**: Delete instance directly from label edit dialog
+  删除按钮：在标签编辑对话框中直接删除实例
+- **Keyboard Navigation**: Use arrow keys to select label, Enter to confirm
+  键盘导航：使用方向键选择标签，Enter确认
+
+**Ctrl+Double-Click Delete Ctrl+双击删除**
+
+- **Ctrl+Double-click**: Quick delete hovered/selected shape (toggleable in View menu)
+  Ctrl+双击快速删除悬停/选中的形状（可在View菜单切换）
+
+**Previous Features (2025-12-14) 之前的功能更新**
 
 **Copy & Paste 复制粘贴**
 
@@ -293,6 +324,46 @@ Annotation visualization
 Hotkeys
 ~~~~~~~
 
+**Enhanced Hotkeys (This Fork) 增强快捷键（本分支）**
+
++--------------------+--------------------------------------------------------------------+
+| **Instance Navigation 实例导航**                                                        |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + I           | Toggle instance navigation mode 切换实例导航模式                      |
++--------------------+--------------------------------------------------------------------+
+| A / D              | Previous/Next instance (in navigation mode) 上一个/下一个实例         |
++--------------------+--------------------------------------------------------------------+
+| Enter              | Edit label (in navigation mode) 编辑标签（导航模式下）                |
++--------------------+--------------------------------------------------------------------+
+| **Quick Operations 快速操作**                                                           |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + C           | Copy selected shape 复制选中的形状                                   |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + V           | Paste shape with preview 粘贴形状（带预览）                          |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + Shift + V   | Copy all boxes from previous image 复制上一张图像的所有框             |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + Z           | Undo last delete 撤销最近删除                                       |
++--------------------+--------------------------------------------------------------------+
+| Q                  | Quick delete hovered shape 快速删除悬停的形状                         |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + Double-click| Delete hovered/selected shape (if enabled) Ctrl+双击删除（需启用）    |
++--------------------+--------------------------------------------------------------------+
+| Double-click shape | Edit label directly 双击形状直接编辑标签                             |
++--------------------+--------------------------------------------------------------------+
+| Double-click empty | Fit window 双击空白适应窗口                                         |
++--------------------+--------------------------------------------------------------------+
+| **Mouse & Scroll 鼠标与滚动**                                                           |
++--------------------+--------------------------------------------------------------------+
+| Mouse wheel        | Zoom in/out 缩放                                                   |
++--------------------+--------------------------------------------------------------------+
+| Ctrl + Mouse wheel | Scroll vertically (3x faster) 垂直滚动（速度3倍）                    |
++--------------------+--------------------------------------------------------------------+
+| Ctrl (hold)        | Disable vertex selection 禁用顶点选择                               |
++--------------------+--------------------------------------------------------------------+
+
+**Original Hotkeys 原版快捷键**
+
 +--------------------+--------------------------------------------+
 | Ctrl + u           | Load all of the images from a directory    |
 +--------------------+--------------------------------------------+
@@ -308,9 +379,9 @@ Hotkeys
 +--------------------+--------------------------------------------+
 | w                  | Create a rect box                          |
 +--------------------+--------------------------------------------+
-| d                  | Next image                                 |
+| d                  | Next image (or next instance in nav mode)  |
 +--------------------+--------------------------------------------+
-| a                  | Previous image                             |
+| a                  | Previous image (or prev instance in nav)   |
 +--------------------+--------------------------------------------+
 | del                | Delete the selected rect box               |
 +--------------------+--------------------------------------------+
