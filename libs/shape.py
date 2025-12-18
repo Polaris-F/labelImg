@@ -89,12 +89,16 @@ class Shape(object):
     def set_open(self):
         self._closed = False
 
-    def paint(self, painter):
+    def paint(self, painter, instance_nav_mode=False):
         if self.points:
             color = self.select_line_color if self.selected else self.line_color
             pen = QPen(color)
+            # In instance navigation mode, use 2x line width for selected shape
+            line_width = DEFAULT_LINE_WIDTH
+            if instance_nav_mode and self.selected:
+                line_width *= 2
             # Try using integer sizes for smoother drawing(?)
-            pen.setWidth(max(1, int(round(DEFAULT_LINE_WIDTH / self.scale))))
+            pen.setWidth(max(1, int(round(line_width / self.scale))))
             painter.setPen(pen)
 
             line_path = QPainterPath()
@@ -140,9 +144,11 @@ class Shape(object):
                     painter.drawText(int(min_x), int(min_y), self.label)
 
             # Fill with semi-transparent color when hovering or selected
-            if self.fill or self._highlight_index is not None:
-                color = self.select_fill_color if self.selected else self.fill_color
-                painter.fillPath(line_path, color)
+            # In instance navigation mode, don't fill the selected shape
+            if not (instance_nav_mode and self.selected):
+                if self.fill or self._highlight_index is not None:
+                    color = self.select_fill_color if self.selected else self.fill_color
+                    painter.fillPath(line_path, color)
 
     def draw_vertex(self, path, i):
         d = self.point_size / self.scale

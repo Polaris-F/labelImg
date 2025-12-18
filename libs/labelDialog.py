@@ -15,6 +15,8 @@ class LabelDialog(QDialog):
 
     def __init__(self, text="Enter object label", parent=None, list_item=None):
         super(LabelDialog, self).__init__(parent)
+        
+        self.delete_requested = False  # Flag to indicate delete was clicked
 
         self.edit = QLineEdit()
         self.edit.setText(text)
@@ -30,6 +32,12 @@ class LabelDialog(QDialog):
         self.button_box = bb = BB(BB.Ok | BB.Cancel, Qt.Horizontal, self)
         bb.button(BB.Ok).setIcon(new_icon('done'))
         bb.button(BB.Cancel).setIcon(new_icon('undo'))
+        
+        # Add Delete button
+        self.delete_button = bb.addButton('Delete 删除', BB.ActionRole)
+        self.delete_button.setIcon(new_icon('delete'))
+        self.delete_button.clicked.connect(self.delete_label)
+        
         bb.accepted.connect(self.validate)
         bb.rejected.connect(self.reject)
 
@@ -43,13 +51,35 @@ class LabelDialog(QDialog):
                 self.list_widget.addItem(item)
             self.list_widget.itemClicked.connect(self.list_item_click)
             self.list_widget.itemDoubleClicked.connect(self.list_item_double_click)
+            # Install event filter for keyboard navigation
+            self.list_widget.installEventFilter(self)
             layout.addWidget(self.list_widget)
+        else:
+            self.list_widget = None
 
         self.setLayout(layout)
+
+    def eventFilter(self, obj, event):
+        """Handle keyboard events for list widget"""
+        if obj == self.list_widget and event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key == Qt.Key_Return or key == Qt.Key_Enter:
+                # Enter key on list item selects it and closes dialog
+                current_item = self.list_widget.currentItem()
+                if current_item:
+                    self.list_item_click(current_item)
+                    self.validate()
+                    return True
+        return super(LabelDialog, self).eventFilter(obj, event)
 
     def validate(self):
         if trimmed(self.edit.text()):
             self.accept()
+    
+    def delete_label(self):
+        """Handle delete button click"""
+        self.delete_requested = True
+        self.reject()  # Close dialog
 
     def post_process(self):
         self.edit.setText(trimmed(self.edit.text()))
@@ -62,7 +92,18 @@ class LabelDialog(QDialog):
         """
         self.edit.setText(text)
         self.edit.setSelection(0, len(text))
-        self.edit.setFocus(Qt.PopupFocusReason)
+        
+        # If list widget exists and has items, focus on it first for keyboard navigation
+        if self.list_widget and self.list_widget.count() > 0:
+            # Find and select the current label in the list
+            for i in range(self.list_widget.count()):
+                if self.list_widget.item(i).text() == text:
+                    self.list_widget.setCurrentRow(i)
+                    break
+            self.list_widget.setFocus(Qt.PopupFocusReason)
+        else:
+            self.edit.setFocus(Qt.PopupFocusReason)
+            
         if move:
             cursor_pos = QCursor.pos()
 

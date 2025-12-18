@@ -109,6 +109,12 @@ class MainWindow(QMainWindow, WindowMixin):
         # Remember scroll position when switching images
         self.last_scroll_pos = {'h': 0, 'v': 0}
         
+        # Instance navigation mode
+        self.instance_nav_mode = False
+        
+        # Instance sort enabled (sort by center x then y)
+        self.instance_sort_enabled = False
+        
         self.img_count = len(self.m_img_list)
 
         # Whether we need to save or not.
@@ -309,6 +315,21 @@ class MainWindow(QMainWindow, WindowMixin):
         advanced_mode = action(get_str('advancedMode'), self.toggle_advanced_mode,
                                'Ctrl+Shift+A', 'expert', get_str('advancedModeDetail'),
                                checkable=True)
+        
+        right_click_delete = action('Ctrl+Double-Click Delete\nCtrl+双击删除', self.toggle_right_click_delete,
+                                    None, None, 'Enable Ctrl+double-click to delete hovered/selected shape\n启用Ctrl+双击删除悬停/选中的形状',
+                                    checkable=True)
+        right_click_delete.setChecked(False)
+        
+        instance_nav = action('Instance Navigation Mode\n实例导航模式', self.toggle_instance_nav_mode,
+                             'Ctrl+I', None, 'Navigate through instances across images with A/D keys\n使用A/D键跨图导航所有实例',
+                             checkable=True)
+        instance_nav.setChecked(False)
+        
+        instance_sort = action('Auto Sort Instances\n自动排序实例', self.toggle_instance_sort,
+                              None, None, 'Sort instances by center position (X primary, Y secondary)\n按中心位置排序实例(X优先,Y次之)',
+                              checkable=True)
+        instance_sort.setChecked(False)
 
         hide_all = action(get_str('hideAllBox'), partial(self.toggle_polygons, False),
                           'Ctrl+H', 'hide', get_str('hideAllBoxDetail'),
@@ -407,6 +428,7 @@ class MainWindow(QMainWindow, WindowMixin):
                               lineColor=color1, create=create, delete=delete, deleteAlt=delete_alt, undoDelete=undo_delete,
                               copyShape=copy_shape, pasteShape=paste_shape, edit=edit, copy=copy,
                               createMode=create_mode, editMode=edit_mode, advancedMode=advanced_mode,
+                              rightClickDelete=right_click_delete, instanceNav=instance_nav, instanceSort=instance_sort,
                               shapeLineColor=shape_line_color, shapeFillColor=shape_fill_color,
                               zoom=zoom, zoomIn=zoom_in, zoomOut=zoom_out, zoomOrg=zoom_org,
                               fitWindow=fit_window, fitWidth=fit_width,
@@ -457,7 +479,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.auto_saving,
             self.single_class_mode,
             self.display_label_option,
-            labels, advanced_mode, None,
+            labels, advanced_mode, right_click_delete, instance_nav, instance_sort, None,
             hide_all, show_all, None,
             zoom_in, zoom_out, zoom_org, None,
             fit_window, fit_width, None,
@@ -577,6 +599,9 @@ class MainWindow(QMainWindow, WindowMixin):
         if event.key() == Qt.Key_Control:
             # Draw rectangle if Ctrl is pressed
             self.canvas.set_drawing_shape_to_square(True)
+        else:
+            # Pass event to parent
+            super(MainWindow, self).keyPressEvent(event)
 
     # Support Functions #
     def set_format(self, save_format):
@@ -611,6 +636,224 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def no_shapes(self):
         return not self.items_to_shapes
+    
+    def toggle_right_click_delete(self, checked):
+        """Toggle Ctrl+double-click delete feature"""
+        self.canvas.right_double_click_delete = checked
+        status = 'enabled' if checked else 'disabled'
+        self.statusBar().showMessage(f'Ctrl+double-click delete {status} (Ctrl+双击删除{"已启用" if checked else "已禁用"})', 2000)
+
+    def toggle_instance_nav_mode(self, checked):
+        """Toggle instance navigation mode"""
+        self.instance_nav_mode = checked
+        self.canvas.instance_nav_mode = checked
+        status = 'enabled' if checked else 'disabled'
+        self.statusBar().showMessage(f'Instance navigation mode {status} (实例导航模式{"已启用" if checked else "已禁用"})', 2000)
+        
+        # Refresh canvas to update rendering
+        if self.canvas.selected_shape:
+            self.canvas.update()
+
+    def toggle_instance_sort(self, checked):
+        """Toggle automatic instance sorting"""
+        self.instance_sort_enabled = checked
+        status = 'enabled' if checked else 'disabled'
+        self.statusBar().showMessage(f'Auto sort instances {status} (自动排序实例{"已启用" if checked else "已禁用"})', 2000)
+        
+        # If enabled and shapes exist, sort them immediately
+        if checked and self.canvas.shapes:
+            self.sort_shapes_by_position()
+
+    def sort_shapes_by_position(self):
+        """Sort shapes by center position (X primary, Y secondary)"""
+        if not self.canvas.shapes:
+            return
+        
+        # Calculate center for each shape
+        def get_shape_center(shape):
+            if not shape.points:
+                return (0, 0)
+            min_x = min(pt.x() for pt in shape.points)
+            max_x = max(pt.x() for pt in shape.points)
+            min_y = min(pt.y() for pt in shape.points)
+            max_y = max(pt.y() for pt in shape.points)
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+            return (center_x, center_y)
+        
+        # Remember currently selected shape
+        selected = self.canvas.selected_shape
+        
+        # Sort shapes by center position (X primary, Y secondary)
+        self.canvas.shapes.sort(key=get_shape_center)
+        
+        # Rebuild label list to match new order
+        self.label_list.clear()
+        self.items_to_shapes.clear()
+        self.shapes_to_items.clear()
+        
+        for shape in self.canvas.shapes:
+            shape.paint_label = self.display_label_option.isChecked()
+            item = HashableQListWidgetItem(shape.label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            item.setBackground(generate_color_by_text(shape.label))
+            self.label_list.addItem(item)
+            self.items_to_shapes[item] = shape
+            self.shapes_to_items[shape] = item
+        
+        # Re-select the previously selected shape
+        if selected and selected in self.canvas.shapes:
+            self.canvas.select_shape(selected)
+            self.shape_selection_changed(True)
+        
+        self.canvas.update()
+
+    def find_next_image_with_shapes(self, start_idx):
+        """Find next image with annotations, wrapping around if needed"""
+        img_count = len(self.m_img_list)
+        if img_count == 0:
+            return None, None
+            
+        # Try all images starting from start_idx
+        for i in range(img_count):
+            idx = (start_idx + i) % img_count
+            img_path = self.m_img_list[idx]
+            
+            # Check if this image has annotations
+            if self.default_save_dir is not None:
+                basename = os.path.basename(os.path.splitext(img_path)[0])
+                xml_path = os.path.join(self.default_save_dir, basename + XML_EXT)
+                txt_path = os.path.join(self.default_save_dir, basename + TXT_EXT)
+                json_path = os.path.join(self.default_save_dir, basename + JSON_EXT)
+                if os.path.isfile(xml_path) or os.path.isfile(txt_path) or os.path.isfile(json_path):
+                    return idx, img_path
+            else:
+                xml_path = os.path.splitext(img_path)[0] + XML_EXT
+                txt_path = os.path.splitext(img_path)[0] + TXT_EXT
+                json_path = os.path.splitext(img_path)[0] + JSON_EXT
+                if os.path.isfile(xml_path) or os.path.isfile(txt_path) or os.path.isfile(json_path):
+                    return idx, img_path
+        
+        return None, None
+
+    def find_prev_image_with_shapes(self, start_idx):
+        """Find previous image with annotations, wrapping around if needed"""
+        img_count = len(self.m_img_list)
+        if img_count == 0:
+            return None, None
+            
+        # Try all images starting from start_idx backwards
+        for i in range(img_count):
+            idx = (start_idx - i) % img_count
+            img_path = self.m_img_list[idx]
+            
+            # Check if this image has annotations
+            if self.default_save_dir is not None:
+                basename = os.path.basename(os.path.splitext(img_path)[0])
+                xml_path = os.path.join(self.default_save_dir, basename + XML_EXT)
+                txt_path = os.path.join(self.default_save_dir, basename + TXT_EXT)
+                json_path = os.path.join(self.default_save_dir, basename + JSON_EXT)
+                if os.path.isfile(xml_path) or os.path.isfile(txt_path) or os.path.isfile(json_path):
+                    return idx, img_path
+            else:
+                xml_path = os.path.splitext(img_path)[0] + XML_EXT
+                txt_path = os.path.splitext(img_path)[0] + TXT_EXT
+                json_path = os.path.splitext(img_path)[0] + JSON_EXT
+                if os.path.isfile(xml_path) or os.path.isfile(txt_path) or os.path.isfile(json_path):
+                    return idx, img_path
+        
+        return None, None
+
+    def go_to_next_instance(self):
+        """Navigate to next instance across all images"""
+        if not self.m_img_list:
+            return
+            
+        # If current image has a next shape, select it
+        if self.canvas.shapes and self.canvas.selected_shape and self.canvas.selected_shape in self.canvas.shapes:
+            current_idx = self.canvas.shapes.index(self.canvas.selected_shape)
+            if current_idx < len(self.canvas.shapes) - 1:
+                # Select next shape in current image
+                next_shape = self.canvas.shapes[current_idx + 1]
+                self.canvas.de_select_shape()
+                self.canvas.select_shape(next_shape)
+                self.shape_selection_changed(True)
+                self.canvas.setFocus(True)
+                return
+        
+        # Otherwise, go to first shape of next image with annotations
+        start_idx = (self.cur_img_idx + 1) % len(self.m_img_list)
+        next_img_idx, next_img_path = self.find_next_image_with_shapes(start_idx)
+        
+        if next_img_idx is not None and next_img_path is not None:
+            # Save current image if needed
+            if self.auto_saving.isChecked() and self.dirty:
+                if self.default_save_dir is not None:
+                    self.save_file()
+                else:
+                    self.change_save_dir_dialog()
+                    return
+            
+            if not self.may_continue():
+                return
+                
+            # Load next image
+            self.cur_img_idx = next_img_idx
+            self.load_file(next_img_path)
+            
+            # Select first shape
+            if self.canvas.shapes:
+                first_shape = self.canvas.shapes[0]
+                self.canvas.de_select_shape()
+                self.canvas.select_shape(first_shape)
+                self.shape_selection_changed(True)
+                self.canvas.setFocus(True)
+
+    def go_to_prev_instance(self):
+        """Navigate to previous instance across all images"""
+        if not self.m_img_list:
+            return
+            
+        # If current image has a previous shape, select it
+        if self.canvas.shapes and self.canvas.selected_shape and self.canvas.selected_shape in self.canvas.shapes:
+            current_idx = self.canvas.shapes.index(self.canvas.selected_shape)
+            if current_idx > 0:
+                # Select previous shape in current image
+                prev_shape = self.canvas.shapes[current_idx - 1]
+                self.canvas.de_select_shape()
+                self.canvas.select_shape(prev_shape)
+                self.shape_selection_changed(True)
+                self.canvas.setFocus(True)
+                return
+        
+        # Otherwise, go to last shape of previous image with annotations
+        start_idx = (self.cur_img_idx - 1) % len(self.m_img_list)
+        prev_img_idx, prev_img_path = self.find_prev_image_with_shapes(start_idx)
+        
+        if prev_img_idx is not None and prev_img_path is not None:
+            # Save current image if needed
+            if self.auto_saving.isChecked() and self.dirty:
+                if self.default_save_dir is not None:
+                    self.save_file()
+                else:
+                    self.change_save_dir_dialog()
+                    return
+            
+            if not self.may_continue():
+                return
+                
+            # Load previous image
+            self.cur_img_idx = prev_img_idx
+            self.load_file(prev_img_path)
+            
+            # Select last shape
+            if self.canvas.shapes:
+                last_shape = self.canvas.shapes[-1]
+                self.canvas.de_select_shape()
+                self.canvas.select_shape(last_shape)
+                self.shape_selection_changed(True)
+                self.canvas.setFocus(True)
 
     def toggle_advanced_mode(self, value=True):
         self._beginner = not value
@@ -789,6 +1032,13 @@ class MainWindow(QMainWindow, WindowMixin):
         if not item:
             return
         text = self.label_dialog.pop_up(item.text())
+        
+        # Check if delete was requested
+        if self.label_dialog.delete_requested:
+            self.label_dialog.delete_requested = False  # Reset flag
+            self.delete_selected_shape()
+            return
+        
         if text is not None:
             item.setText(text)
             item.setBackground(generate_color_by_text(text))
@@ -1212,6 +1462,10 @@ class MainWindow(QMainWindow, WindowMixin):
             self.add_recent_file(self.file_path)
             self.toggle_actions(True)
             self.show_bounding_box_from_annotation_file(self.file_path)
+            
+            # Sort shapes if instance sort is enabled
+            if self.instance_sort_enabled and self.canvas.shapes:
+                self.sort_shapes_by_position()
 
             counter = self.counter_str()
             self.setWindowTitle(__appname__ + ' ' + file_path + ' ' + counter)
@@ -1221,7 +1475,14 @@ class MainWindow(QMainWindow, WindowMixin):
             self.label_list.clearSelection()
             self.canvas.de_select_shape()
 
-            self.canvas.setFocus(True)
+            # Set focus to label list to enable keyboard navigation
+            # In instance navigation mode, focus should be on canvas for Enter key
+            if self.instance_nav_mode:
+                self.canvas.setFocus(True)
+            elif self.label_list.count() > 0:
+                self.label_list.setFocus(True)
+            else:
+                self.canvas.setFocus(True)
             return True
         return False
 
@@ -1232,6 +1493,9 @@ class MainWindow(QMainWindow, WindowMixin):
         return '[{} / {}]'.format(self.cur_img_idx + 1, self.img_count)
 
     def show_bounding_box_from_annotation_file(self, file_path):
+        if file_path is None:
+            return
+            
         if self.default_save_dir is not None:
             basename = os.path.basename(os.path.splitext(file_path)[0])
             xml_path = os.path.join(self.default_save_dir, basename + XML_EXT)
@@ -1449,6 +1713,11 @@ class MainWindow(QMainWindow, WindowMixin):
             self.save_file()
 
     def open_prev_image(self, _value=False):
+        # If in instance navigation mode, navigate to previous instance instead
+        if self.instance_nav_mode:
+            self.go_to_prev_instance()
+            return
+            
         # Proceeding prev image without dialog if having any label
         if self.auto_saving.isChecked():
             if self.default_save_dir is not None:
@@ -1474,6 +1743,11 @@ class MainWindow(QMainWindow, WindowMixin):
                 self.load_file(filename)
 
     def open_next_image(self, _value=False):
+        # If in instance navigation mode, navigate to next instance instead
+        if self.instance_nav_mode:
+            self.go_to_next_instance()
+            return
+            
         # Proceeding next image without dialog if having any label
         if self.auto_saving.isChecked():
             if self.default_save_dir is not None:
@@ -1631,12 +1905,30 @@ class MainWindow(QMainWindow, WindowMixin):
             self.delete_hovered_shape(self.canvas.h_shape)
             return
         
+        # Remember the index before deleting (for instance nav mode)
+        deleted_idx = None
+        if self.instance_nav_mode and self.canvas.selected_shape and self.canvas.selected_shape in self.canvas.shapes:
+            deleted_idx = self.canvas.shapes.index(self.canvas.selected_shape)
+        
         # Otherwise delete selected shape
         deleted_shape = self.canvas.delete_selected()
         if deleted_shape:
             self._record_deleted_shape(deleted_shape)
             self.remove_label(deleted_shape)
             self.set_dirty()
+            
+            # In instance navigation mode, auto-select next shape if available
+            if self.instance_nav_mode and deleted_idx is not None and self.canvas.shapes:
+                # Try to select the shape at the same index (which is now the next shape)
+                if deleted_idx < len(self.canvas.shapes):
+                    next_shape = self.canvas.shapes[deleted_idx]
+                else:
+                    # If we deleted the last shape, select the new last shape
+                    next_shape = self.canvas.shapes[-1]
+                self.canvas.select_shape(next_shape)
+                self.shape_selection_changed(True)
+                self.canvas.setFocus(True)
+            
             if self.no_shapes():
                 for action in self.actions.onShapesPresent:
                     action.setEnabled(False)
@@ -1664,6 +1956,13 @@ class MainWindow(QMainWindow, WindowMixin):
                 item = self.shapes_to_items[shape]
                 # Open edit dialog
                 text = self.label_dialog.pop_up(item.text())
+                
+                # Check if delete was requested
+                if self.label_dialog.delete_requested:
+                    self.label_dialog.delete_requested = False  # Reset flag
+                    self.delete_selected_shape()
+                    return
+                
                 if text is not None:
                     item.setText(text)
                     item.setBackground(generate_color_by_text(text))

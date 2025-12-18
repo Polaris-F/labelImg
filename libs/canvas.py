@@ -65,6 +65,10 @@ class Canvas(QWidget):
         self.paste_mode = False
         self.paste_shape_data = None
         self.paste_preview_pos = QPointF()
+        # Right double-click delete feature
+        self.right_double_click_delete = False
+        # Instance navigation mode
+        self.instance_nav_mode = False
         # Menus:
         self.menus = (QMenu(), QMenu())
         # Set widget options.
@@ -389,6 +393,19 @@ class Canvas(QWidget):
             self.finalise()
         elif not self.drawing():
             pos = self.transform_pos(ev.pos())
+            
+            # Get modifier keys
+            modifiers = QApplication.keyboardModifiers()
+            ctrl_pressed = modifiers & Qt.ControlModifier
+            
+            # Ctrl+Double-click to delete if feature enabled
+            if ctrl_pressed and self.right_double_click_delete:
+                # Priority: hovered shape > selected shape
+                shape_to_delete = self.h_shape if self.h_shape else self.selected_shape
+                if shape_to_delete:
+                    self.deleteHoveredShape.emit(shape_to_delete)
+                    return
+            
             # Check if double-click on a shape to edit it
             if self.h_shape:
                 self.editShape.emit(self.h_shape)
@@ -409,6 +426,34 @@ class Canvas(QWidget):
         self.set_hiding()
         self.selectionChanged.emit(True)
         self.update()
+    
+    def select_next_shape(self):
+        """Cycle to next shape in the list"""
+        if not self.shapes:
+            return
+        
+        if self.selected_shape and self.selected_shape in self.shapes:
+            # Find current index and select next
+            current_idx = self.shapes.index(self.selected_shape)
+            next_idx = (current_idx + 1) % len(self.shapes)
+            self.select_shape(self.shapes[next_idx])
+        else:
+            # No shape selected, select first one
+            self.select_shape(self.shapes[0])
+    
+    def select_previous_shape(self):
+        """Cycle to previous shape in the list"""
+        if not self.shapes:
+            return
+        
+        if self.selected_shape and self.selected_shape in self.shapes:
+            # Find current index and select previous
+            current_idx = self.shapes.index(self.selected_shape)
+            prev_idx = (current_idx - 1) % len(self.shapes)
+            self.select_shape(self.shapes[prev_idx])
+        else:
+            # No shape selected, select last one
+            self.select_shape(self.shapes[-1])
 
     def select_shape_point(self, point):
         """Select the first shape created which contains this point."""
@@ -575,13 +620,44 @@ class Canvas(QWidget):
         Shape.label_font_size = self.label_font_size
         for shape in self.shapes:
             if (shape.selected or not self._hide_background) and self.isVisible(shape):
-                shape.fill = shape.selected or shape == self.h_shape
-                shape.paint(p)
+                # In instance navigation mode, don't fill selected shapes
+                if self.instance_nav_mode and shape.selected:
+                    shape.fill = False
+                else:
+                    shape.fill = shape.selected or shape == self.h_shape
+                # Pass instance nav mode flag to shape for custom rendering
+                shape.paint(p, instance_nav_mode=self.instance_nav_mode)
         if self.current:
             self.current.paint(p)
             self.line.paint(p)
         if self.selected_shape_copy:
             self.selected_shape_copy.paint(p)
+
+        # Paint crosshair in instance navigation mode
+        if self.instance_nav_mode and self.selected_shape:
+            # Get the center of the selected shape
+            points = self.selected_shape.points
+            if points:
+                min_x = min(pt.x() for pt in points)
+                max_x = max(pt.x() for pt in points)
+                min_y = min(pt.y() for pt in points)
+                max_y = max(pt.y() for pt in points)
+                center_x = (min_x + max_x) / 2
+                center_y = (min_y + max_y) / 2
+                
+                # Draw crosshair lines with the same color as the shape
+                pen = QPen(self.selected_shape.line_color)
+                pen.setWidth(2)
+                pen.setStyle(Qt.DashLine)  # Match the border line style
+                p.setPen(pen)
+                
+                # Draw horizontal lines: left side (0 to min_x) and right side (max_x to image width)
+                p.drawLine(0, int(center_y), int(min_x), int(center_y))
+                p.drawLine(int(max_x), int(center_y), int(self.pixmap.width()), int(center_y))
+                
+                # Draw vertical lines: top side (0 to min_y) and bottom side (max_y to image height)
+                p.drawLine(int(center_x), 0, int(center_x), int(min_y))
+                p.drawLine(int(center_x), int(max_y), int(center_x), int(self.pixmap.height()))
 
         # Paint paste preview
         if self.paste_mode and self.paste_shape_data:
@@ -725,6 +801,9 @@ class Canvas(QWidget):
             self.current = None
             self.drawingPolygon.emit(False)
             self.update()
+        elif key == Qt.Key_Return and self.instance_nav_mode and self.selected_shape:
+            # In instance navigation mode, Enter key triggers edit (check before can_close_shape)
+            self.editShape.emit(self.selected_shape)
         elif key == Qt.Key_Return and self.can_close_shape():
             self.finalise()
         elif key == Qt.Key_Q and self.h_shape and not self.drawing():
